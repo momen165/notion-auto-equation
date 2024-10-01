@@ -1,2 +1,5 @@
 # notion-auto-equation
 turn "$$ $$" to notion's equation
+https://cdn.discordapp.com/attachments/1177207022152855574/1290625431334289469/2024-10-01_18.44.11.png?ex=66fd2419&is=66fbd299&hm=60da700ab29c55e8e0ca830ce399f3a81f68e5c2b7be77e2ed17160fed3ff088&
+
+https://cdn.discordapp.com/attachments/1177207022152855574/1290625431636148254/2024-10-01_18.44.25.png?ex=66fd2419&is=66fbd299&hm=ab9d884fe4e805c176e1f9a8a405804d1ca6d2153de5f65b517dd03c90532d4f&
