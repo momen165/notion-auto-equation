@@ -1,2 +1,2 @@
 # notion-auto-equation
-$$ $$ to notion's equation
+turn "$$ $$" to notion's equation
