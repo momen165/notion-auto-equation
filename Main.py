@@ -11,90 +11,95 @@ HEADERS = {
     "Content-Type": "application/json"
 }
 
+# 用於遞歸獲取所有區塊及其子區塊
+def get_all_blocks(block_id):
+    url = f"https://api.notion.com/v1/blocks/{block_id}/children?page_size=100"
+    blocks = []
+    has_more = True
+    start_cursor = None
+
+    while has_more:
+        if start_cursor:
+            response = requests.get(url, headers=HEADERS, params={"start_cursor": start_cursor})
+        else:
+            response = requests.get(url, headers=HEADERS)
+
+        data = response.json()
+        results = data.get('results', [])
+        for block in results:
+            blocks.append(block)
+            # 如果區塊有子區塊，遞歸獲取
+            if block.get('has_children', False):
+                child_blocks = get_all_blocks(block['id'])
+                blocks.extend(child_blocks)
+
+        has_more = data.get('has_more', False)
+        start_cursor = data.get('next_cursor')
+
+    return blocks
+
 def get_notion_page_content(page_id):
-    url = f"https://api.notion.com/v1/blocks/{page_id}/children"
-    response = requests.get(url, headers=HEADERS)
-    return response.json()
+    blocks = get_all_blocks(page_id)
+    return blocks
 
 page_content = get_notion_page_content(PAGE_ID)
 
-##step 2 block to data frame
+## Step 2: 將區塊轉換為 DataFrame
 def blocks_to_dataframe(blocks):
     data = []
-    for block in blocks['results']:
+    for block in blocks:
         block_type = block['type']
         content = ''
         
-        # 處理有 rich_text 的區塊
+        # 處理有 rich_text 的區塊類型
         if 'rich_text' in block.get(block_type, {}):
             for item in block[block_type]['rich_text']:
                 if item['type'] == 'text':
                     content += item['text']['content']
                 elif item['type'] == 'equation':
                     content += f"$$ {item['equation']['expression']} $$"
-        
+        # 處理其他類型的區塊，例如 code 區塊
+        elif block_type == 'code':
+            content += block['code']['text'][0]['text']['content']
+        # 處理引言（quote）區塊
+        elif block_type == 'quote':
+            for item in block['quote']['rich_text']:
+                if item['type'] == 'text':
+                    content += item['text']['content']
+                elif item['type'] == 'equation':
+                    content += f"$$ {item['equation']['expression']} $$"
+        # 其他可能的區塊類型可以在這裡添加
+
         data.append({'id': block['id'], 'type': block_type, 'content': content})
     
     return pd.DataFrame(data)
 
 df = blocks_to_dataframe(page_content)
 
-##step 3 get the eqation
+## Step 3: 處理內容，提取公式並格式化
 def format_content_for_notion(block):
-    # 檢查 block 是否是一個字典類型
-    if isinstance(block, dict):
-        # 只處理 paragraph 和 heading_3 兩種類型
-        if block["type"] == "paragraph" or block["type"] == "heading_3":
-            parts = block[block["type"]]["rich_text"][0]["text"]["content"].split("$$")
-            formatted_parts = []
-
-            for i, part in enumerate(parts):
-                part = part.strip()
-                if i % 2 == 1:  # 偶數部分是公式
-                    formatted_parts.append({
-                        "type": "equation",
-                        "equation": {"expression": part}
-                    })
-                else:
-                    if part:  # 將文字前後加上空白
-                        formatted_parts.append({
-                            "type": "text",
-                            "text": {"content": f" {part} "}  # 在文字前後加空白
-                        })
-
-            # 返回與原始 block 同類型的格式
-            return {
-                "type": block["type"],
-                block["type"]: {"rich_text": formatted_parts}
-            }
-
-        # 如果是 divider 等非文本類型，保持原狀
-        return block
-    
-    elif isinstance(block, str):  # 如果 block 是字串，則處理文字中的公式
+    # 如果 block 是字串，處理其中的公式
+    if isinstance(block, str):
         parts = block.split("$$")
         formatted_parts = []
 
         for i, part in enumerate(parts):
             part = part.strip()
-            if i % 2 == 1:  # 偶數部分是公式
+            if i % 2 == 1:  # 奇數索引部分是公式
                 formatted_parts.append({
                     "type": "equation",
                     "equation": {"expression": part}
                 })
             else:
-                if part:  # 將文字前後加上空白
+                if part:
                     formatted_parts.append({
                         "type": "text",
-                        "text": {"content": f" {part} "}  # 在文字前後加空白
+                        "text": {"content": f" {part} "}
                     })
-
-        # 返回格式化後的內容
         return formatted_parts
-    
     else:
-        raise TypeError(f"Unsupported block type: {type(block)}")
-
+        # 如果 block 是字典，直接返回
+        return block
 
 def combine_text_and_equations(df):
     combined_blocks = []
@@ -111,10 +116,19 @@ def combine_text_and_equations(df):
             })
         
         # 處理 heading_3 類型，使用 heading_3 來替換 paragraph
-        elif row['type'] == "heading_3":
+        elif row['type'] == "heading_3" or row['type'] == "heading_2" or row['type'] == "heading_1":
             combined_blocks.append({
-                'type': 'heading_3',
-                'heading_3': {
+                'type': row['type'],
+                row['type']: {
+                    'rich_text': notion_block_content
+                }
+            })
+        
+        # 處理 quote 類型
+        elif row['type'] == "quote":
+            combined_blocks.append({
+                'type': 'quote',
+                'quote': {
                     'rich_text': notion_block_content
                 }
             })
@@ -128,10 +142,25 @@ def combine_text_and_equations(df):
                         'rich_text': notion_block_content
                     }
                 })
+        # 處理其他類型的區塊（例如 code）
+        elif row['type'] == "code":
+            combined_blocks.append({
+                'type': 'code',
+                'code': {
+                    'text': notion_block_content,
+                    'language': 'python'  # 根據實際情況設置語言
+                }
+            })
+        # 其他區塊類型可以在這裡添加
+        elif row['type'] == "bulleted_list_item":
+            combined_blocks.append({
+                'type': 'bulleted_list_item',
+                'bulleted_list_item': {
+                    'rich_text': notion_block_content
+                }
+            })
 
     return combined_blocks
-
-
 
 combined_data = combine_text_and_equations(df)
 
