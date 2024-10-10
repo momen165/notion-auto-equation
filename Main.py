@@ -84,7 +84,6 @@ def format_content_for_notion(block):
         formatted_parts = []
 
         for i, part in enumerate(parts):
-            part = part.strip()
             if i % 2 == 1:  # 奇數索引部分是公式
                 formatted_parts.append({
                     "type": "equation",
@@ -94,7 +93,7 @@ def format_content_for_notion(block):
                 if part:
                     formatted_parts.append({
                         "type": "text",
-                        "text": {"content": f" {part} "}
+                        "text": {"content": part}
                     })
         return formatted_parts
     else:
